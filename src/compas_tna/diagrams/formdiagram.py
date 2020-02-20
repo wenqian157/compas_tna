@@ -14,6 +14,9 @@ from compas.geometry import add_vectors_xy
 from compas.geometry import normalize_vector_xy
 from compas.geometry import cross_vectors
 
+from compas.datastructures import network_find_cycles
+from compas.datastructures import Network
+
 from compas_tna.diagrams import Diagram
 
 
@@ -30,6 +33,7 @@ class FormDiagram(Diagram):
     *   ``from_obj`` : Construct a diagram from the geometry described in an OBJ file. Only points, lines, and faces are taken into account.
     *   ``from_json`` : Construct a diagram from a JSON file containing a serialised "data" dictionary.
     *   ``from_lines`` : Construct a diagram from pairs of line start and end points.
+    *   ``from_mesh`` : Construct a diagram from a Mesh.
     *   ``from_rhinomesh`` : Construct a diagram from a Rhino mesh.
     *   ``from_rhinosurface`` : Construct a diagram from a Rhino surface, using the U and V isolines.
     *   ``from_rhinolines`` : Construct a diagram from a selection of Rhino lines (i.e. curves of degree 1).
@@ -79,90 +83,126 @@ class FormDiagram(Diagram):
     def __init__(self):
         super(FormDiagram, self).__init__()
         self.default_vertex_attributes.update({
-            'x'           : 0.0,
-            'y'           : 0.0,
-            'z'           : 0.0,
-            'px'          : 0.0,
-            'py'          : 0.0,
-            'pz'          : 0.0,
-            'sw'          : 0.0,
-            't'           : 1.0,
-            'is_anchor'   : False,
-            'is_fixed'    : False,
-            'is_external' : False,
-            'rx'          : 0.0,
-            'ry'          : 0.0,
-            'rz'          : 0.0,
+            'x': 0.0,
+            'y': 0.0,
+            'z': 0.0,
+            'px': 0.0,
+            'py': 0.0,
+            'pz': 0.0,
+            'sw': 0.0,
+            't': 1.0,
+            'is_anchor': False,
+            'is_fixed': False,
+            'is_external': False,
+            'rx': 0.0,
+            'ry': 0.0,
+            'rz': 0.0,
         })
         self.default_edge_attributes.update({
-            'q'           : 1.0,
-            'f'           : 0.0,
-            'l'           : 0.0,
-            'a'           : 0.0,
-            'qmin'        : 0.0,
-            'qmax'        : 1e+7,
-            'lmin'        : 0.0,
-            'lmax'        : 1e+7,
-            'fmin'        : 0.0,
-            'fmax'        : 1e+7,
-            'is_edge'     : True,
-            'is_external' : False
+            'q': 1.0,
+            'f': 0.0,
+            'l': 0.0,
+            'a': 0.0,
+            'qmin': 0.0,
+            'qmax': 1e+7,
+            'lmin': 0.0,
+            'lmax': 1e+7,
+            'fmin': 0.0,
+            'fmax': 1e+7,
+            'is_edge': True,
+            'is_external': False,
+            'is_tension': False
         })
         self.default_face_attributes.update({
             'is_loaded': True
         })
         self.attributes.update({
-            'name'       : 'FormDiagram',
-            'feet.scale' : 1.0,
-            'feet.alpha' : 45,
-            'feet.tol'   : 0.1,
+            'name': 'FormDiagram',
+            'feet.scale': 1.0,
+            'feet.alpha': 45,
+            'feet.tol': 0.1,
         })
 
-    # @classmethod
-    # def from_lines(cls, lines, delete_boundary_face=True, precision=None, **kwargs):
-    #     """Construct a FormDiagram from a list of lines described by start and end point coordinates.
 
-    #     Parameters
-    #     ----------
-    #     lines : list
-    #         A list of pairs of point coordinates.
-    #     delete_boundary_face : bool, optional
-    #         Set ``True`` to delete the face on the outside of the boundary, ``False`` to keep it.
-    #         Default is ``True``.
-    #     precision: str, optional
-    #         The precision of the geometric map that is used to connect the lines.
-    #         If not specified, the global precision stored in ``compas.PRECISION`` will be used.
+    @classmethod
+    def from_lines(cls, lines, delete_boundary_face=True, precision=None, **kwargs):
+        """Construct a FormDiagram from a list of lines described by start and end point coordinates.
 
-    #     Returns
-    #     -------
-    #     FormDiagram
-    #         A FormDiagram object.
+        Parameters
+        ----------
+        lines : list
+            A list of pairs of point coordinates.
+        delete_boundary_face : bool, optional
+            Set ``True`` to delete the face on the outside of the boundary, ``False`` to keep it.
+            Default is ``True``.
+        precision: str, optional
+            The precision of the geometric map that is used to connect the lines.
+            If not specified, the global precision stored in ``compas.PRECISION`` will be used.
 
-    #     Examples
-    #     --------
-    #     >>> import compas
-    #     >>> from compas.files import OBJ
-    #     >>> from compas_tna.diagrams import FormDiagram
-    #     >>> obj = OBJ(compas.get('lines.obj'))
-    #     >>> vertices = obj.parser.vertices
-    #     >>> edges = obj.parser.lines
-    #     >>> lines = [(vertices[u], vertices[v]) for u, v in edges]
-    #     >>> form = FormDiagram.from_lines(lines)
+        Returns
+        -------
+        FormDiagram
+            A FormDiagram object.
 
-    #     """
-    #     from compas.datastructures import network_find_faces
-    #     from compas.datastructures import Network
-    #     network = Network.from_lines(lines, precision=precision)
-    #     mesh = cls()
-    #     for key, attr in network.vertices(True):
-    #         mesh.add_vertex(key, x=attr['x'], y=attr['y'], z=0.0)
-    #     mesh.halfedge = network.halfedge
-    #     network_find_faces(mesh)
-    #     if delete_boundary_face:
-    #         mesh.delete_face(0)
-    #     if 'name' in kwargs:
-    #         mesh.name = kwargs['name']
-    #     return mesh
+        Examples
+        --------
+        >>> import compas
+        >>> from compas.files import OBJ
+        >>> from compas_tna.diagrams import FormDiagram
+        >>> obj = OBJ(compas.get('lines.obj'))
+        >>> vertices = obj.parser.vertices
+        >>> edges = obj.parser.lines
+        >>> lines = [(vertices[u], vertices[v]) for u, v in edges]
+        >>> form = FormDiagram.from_lines(lines)
+        """
+        network = Network.from_lines(lines, precision=precision)
+        points = network.to_points()
+        cycles = network_find_cycles(network, breakpoints=network.leaves())
+        form = cls.from_vertices_and_faces(points, cycles)
+        if delete_boundary_face:
+            form.delete_face(0)
+        if 'name' in kwargs:
+            form.name = kwargs['name']
+        return form
+
+    @classmethod
+    def from_mesh(cls, mesh, **kwargs):
+        """Construct a FormDiagram from a Mesh.
+
+        Parameters
+        ----------
+        mesh : compas.datastructures.Mesh
+            The mesh to be taken as reference.
+            The keys of the faces and vertices of the base mesh will be kept.
+            Only the XY coordinates per vertex are stored. Z = 0.0
+
+        Returns
+        -------
+        FormDiagram
+            A FormDiagram object.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            import compas
+            from compas.datastructures import Mesh
+            from compas_tna.diagrams import FormDiagram
+
+            mesh = Mesh.from_obj(compas.get('faces.obj'))
+            form = FormDiagram.from_mesh(mesh)
+            form.plot()
+        """
+        form = cls()
+
+        for vkey, attr in mesh.vertices(True):
+            form.add_vertex(key=vkey, x=attr['x'], y=attr['y'], z=0.0)
+        for fkey in mesh.faces():
+            form.add_face(vertices=mesh.face_vertices(fkey), fkey=fkey)
+
+        if 'name' in kwargs:
+            mesh.name = kwargs['name']
+        return form
 
     @classmethod
     def from_rhinomesh(cls, guid, **kwargs):
@@ -427,6 +467,9 @@ face degree: {}/{}
     # boundary conditions
     # --------------------------------------------------------------------------
 
+    # update boundaries should loop over all boundaries
+    # containing anchors
+
     def update_boundaries(self, feet=2):
         boundaries = self.vertices_on_boundaries()
         exterior = boundaries[0]
@@ -480,7 +523,7 @@ face degree: {}/{}
 
         scale = self.attributes['feet.scale']
         alpha = self.attributes['feet.alpha'] * pi / 180
-        tol   = self.attributes['feet.tol']
+        tol = self.attributes['feet.tol']
 
         key_foot = {}
         key_xyz = {key: self.vertex_coordinates(key, 'xyz') for key in self.vertices()}
@@ -601,15 +644,25 @@ face degree: {}/{}
 if __name__ == '__main__':
 
     import compas
+    from compas.datastructures import Mesh
     from compas.files import OBJ
 
     filepath = compas.get('lines.obj')
 
-    obj      = OBJ(filepath)
+    obj = OBJ(filepath)
     vertices = obj.parser.vertices
-    edges    = obj.parser.lines
-    lines    = [(vertices[u], vertices[v], 0) for u, v in edges]
+    edges = obj.parser.lines
+    lines = [(vertices[u], vertices[v], 0) for u, v in edges]
 
     form = FormDiagram.from_lines(lines, delete_boundary_face=False)
+
+    mesh = Mesh.from_obj(compas.get('faces.obj'))
+    height = 5.0
+    mesh.set_vertices_attribute('z', height)
+    form = FormDiagram.from_mesh(mesh)
+
+    assert form.number_of_faces() == mesh.number_of_faces()
+    assert form.number_of_vertices() == mesh.number_of_vertices()
+    assert max(mesh.get_vertices_attribute('z')) - height == max(form.get_vertices_attribute('z'))
 
     form.plot()
